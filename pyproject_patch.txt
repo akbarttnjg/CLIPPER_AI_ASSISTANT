@@ -1,0 +1,11 @@
+Add or merge:
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "phase26_claude_mcp_bridge*",
+    "phase27_video_director*",
+    "phase28_autonomous_pipeline*",
+    "phase29_cluster_render*",
+    "phase30_release*"
+]

@@ -1,0 +1,18 @@
+{
+    "name": "cut_video",
+    "description": "Cut video segments using local FFmpeg engine.",
+    "input": {
+        "source": "absolute path to source video",
+        "segments": [
+            {
+                "start": "HH:MM:SS",
+                "end": "HH:MM:SS"
+            }
+        ]
+    },
+    "output": {
+        "files": [
+            "mp4 clip paths"
+        ]
+    }
+}

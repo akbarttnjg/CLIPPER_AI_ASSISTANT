@@ -1,0 +1,11 @@
+# Apply this section into the existing pyproject.toml
+
+[tool.setuptools]
+packages = [
+    "phase26_claude_mcp_bridge",
+    "phase27_video_director",
+    "phase28_autonomous_pipeline",
+    "phase29_cluster_render",
+    "phase30_release",
+    "phase30_release.environment_checker"
+]

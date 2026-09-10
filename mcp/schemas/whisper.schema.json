@@ -1,0 +1,12 @@
+{
+    "name": "transcribe_video",
+    "description": "Generate word-level transcription using local Whisper CUDA engine.",
+    "input": {
+        "media": "absolute path to media file",
+        "model": "large-v3",
+        "device": "cuda"
+    },
+    "output": {
+        "segments": "timestamped transcript segments"
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "create_subtitle",
+    "description": "Generate ASS subtitle using selected template.",
+    "input": {
+        "segments": "Whisper timestamp data",
+        "template": "subtitle template identifier"
+    },
+    "output": {
+        "subtitle": ".ass file path"
+    }
+}

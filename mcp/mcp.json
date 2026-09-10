@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+        "clipper_ai": {
+            "name": "CLIPPER_AI_ASSISTANT",
+            "command": "C:\\CLIPPER_AI_ASSISTANT\\.venv\\Scripts\\python.exe",
+            "args": [
+                "-m",
+                "clipper_ai.mcp.launcher"
+            ],
+            "description": "Local video processing MCP server for FFmpeg, Whisper CUDA, ASS subtitles and DaVinci FCPXML export"
+        }
+    }
+}

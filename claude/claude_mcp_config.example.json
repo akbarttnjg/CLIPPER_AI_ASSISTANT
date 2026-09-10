@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "CLIPPER_AI_ASSISTANT": {
+            "command": "python",
+            "args": [
+                "-m",
+                "clipper_ai.mcp.launcher"
+            ],
+            "description": "Local CLIPPER AI ASSISTANT MCP server"
+        }
+    }
+}
