@@ -11,5 +11,10 @@ build-backend = "setuptools.build_meta"
 where = ["src", "."]
 include = [
     "clipper_ai*",
+    "phase26_*",
+    "phase27_*",
+    "phase28_*",
+    "phase29_*",
+    "phase30_*",
     "phase30_release*"
 ]

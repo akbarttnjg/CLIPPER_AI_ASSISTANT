@@ -1,3 +1,6 @@
-from .server import create_server
+"""MCP integration package."""
 
-__all__ = ["create_server"]
+from .server import create_server
+from .sdk_server import create_mcp_server
+
+__all__ = ["create_server", "create_mcp_server"]
