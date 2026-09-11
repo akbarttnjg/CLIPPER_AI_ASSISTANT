@@ -1,18 +1,17 @@
-import json
+"""CLIPPER AI MCP launcher."""
 
 from .sdk_server import create_mcp_server
 
 
-def main() -> None:
+def main():
     server = create_mcp_server()
 
-    print("CLIPPER_AI_ASSISTANT MCP SERVER")
-    print("==============================")
-    print(json.dumps({
-        "status": "READY",
-        "server": "CLIPPER_AI_ASSISTANT",
-        "protocol": "MCP"
-    }, indent=2))
+    if hasattr(server, "run_stdio"):
+        server.run_stdio()
+    elif hasattr(server, "run"):
+        server.run()
+    else:
+        raise RuntimeError("No MCP runner found")
 
 
 if __name__ == "__main__":
