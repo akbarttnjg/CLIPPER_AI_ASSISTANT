@@ -1,7 +1,4 @@
-"""CLIPPER AI MCP launcher."""
-
 from .sdk_server import create_mcp_server
-
 
 def main():
     server = create_mcp_server()
@@ -11,8 +8,7 @@ def main():
     elif hasattr(server, "run"):
         server.run()
     else:
-        raise RuntimeError("No MCP runner found")
-
+        raise RuntimeError("No MCP runner available")
 
 if __name__ == "__main__":
     main()

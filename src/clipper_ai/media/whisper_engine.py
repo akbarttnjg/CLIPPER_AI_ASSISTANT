@@ -1,5 +1,7 @@
-from pathlib import Path
+"""Whisper transcription bridge."""
+
 from typing import Dict
+from clipper_ai.production.whisper_connector import WhisperCUDAConnector
 
 
 def transcribe_video(
@@ -7,17 +9,18 @@ def transcribe_video(
     model: str = "large-v3",
     device: str = "cuda"
 ) -> Dict:
-    """
-    Whisper transcription interface.
+    connector = WhisperCUDAConnector(
+        model_name=model,
+        device=device,
+    )
 
-    This compatibility implementation keeps the pipeline contract.
-    The production CUDA inference backend can be connected here.
-    """
+    result = connector.transcribe(video)
+
     return {
         "video": str(video),
         "model": model,
         "device": device,
-        "segments": []
+        "segments": result.get("segments", []),
     }
 
 
@@ -26,13 +29,8 @@ def transcribe_audio(
     model: str = "large-v3",
     device: str = "cuda"
 ) -> Dict:
-    """
-    Backward-compatible audio transcription entry point.
-
-    MCP tools and previous pipeline versions may call this name.
-    """
     return transcribe_video(
         video=audio,
         model=model,
-        device=device
+        device=device,
     )
