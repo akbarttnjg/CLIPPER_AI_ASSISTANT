@@ -1,18 +1,14 @@
 """
 CLIPPER AI ASSISTANT
-MCP SDK 2.2.0 Compatible Server
+MCP SDK 2.2.0 Server Adapter
 
-Adapter:
-Claude Code
-    |
-    |
-MCP stdio
-    |
-    |
-sdk_server.py
-    |
-    |
-tools.py
+Version:
+v7.1 Tool Schema Layer
+
+Purpose:
+- Expose CLIPPER tools to Claude Code
+- Provide correct JSON schema
+- Execute registered tools safely
 """
 
 from __future__ import annotations
@@ -37,17 +33,19 @@ from .tools import get_tool_registry
 
 
 
-# ==========================================================
+# ============================================================
 # TOOL REGISTRY
-# ==========================================================
+# ============================================================
 
-TOOLS = get_tool_registry()
+TOOLS: Dict[str, Dict[str, Any]] = (
+    get_tool_registry()
+)
 
 
 
-# ==========================================================
+# ============================================================
 # MCP SERVER INSTANCE
-# ==========================================================
+# ============================================================
 
 server = Server(
     "CLIPPER_AI_ASSISTANT"
@@ -55,24 +53,22 @@ server = Server(
 
 
 
-# ==========================================================
-# HANDLE tools/list
-# ==========================================================
+# ============================================================
+# tools/list HANDLER
+# ============================================================
 
 async def list_tools_handler(
     context: Any,
     request: ListToolsRequest,
 ) -> ListToolsResult:
     """
-    Return available CLIPPER tools
-    to Claude Code.
+    Return available tools and their schemas.
     """
-
 
     tools: List[Tool] = []
 
 
-    for name in TOOLS.keys():
+    for name, definition in TOOLS.items():
 
         tools.append(
 
@@ -84,15 +80,15 @@ async def list_tools_handler(
                     f"CLIPPER AI ASSISTANT tool: {name}"
                 ),
 
-                inputSchema={
-
-                    "type": "object",
-
-                    "properties": {},
-
-                    "additionalProperties": True,
-
-                },
+                inputSchema=(
+                    definition.get(
+                        "schema",
+                        {
+                            "type": "object",
+                            "properties": {},
+                        },
+                    )
+                ),
 
             )
 
@@ -105,20 +101,20 @@ async def list_tools_handler(
 
 
 
-# ==========================================================
-# HANDLE tools/call
-# ==========================================================
+# ============================================================
+# tools/call HANDLER
+# ============================================================
 
 async def call_tool_handler(
     context: Any,
     request: CallToolRequest,
 ) -> CallToolResult:
     """
-    Execute requested CLIPPER tool.
+    Execute requested MCP tool.
     """
 
 
-    name = request.params.name
+    tool_name = request.params.name
 
 
     arguments: Dict[str, Any] = (
@@ -127,22 +123,34 @@ async def call_tool_handler(
     )
 
 
-    if name not in TOOLS:
+    if tool_name not in TOOLS:
 
         raise ValueError(
-            f"Unknown tool: {name}"
+            f"Unknown tool: {tool_name}"
         )
 
 
-    tool_function = TOOLS[name]
+    definition = TOOLS[tool_name]
 
 
-    result = tool_function(
+    handler = definition.get(
+        "handler"
+    )
+
+
+    if handler is None:
+
+        raise RuntimeError(
+            f"Tool {tool_name} has no handler"
+        )
+
+
+    result = handler(
         **arguments
     )
 
 
-    # support async tool
+    # Support async tools
     if hasattr(
         result,
         "__await__"
@@ -170,9 +178,9 @@ async def call_tool_handler(
 
 
 
-# ==========================================================
-# REGISTER MCP HANDLERS
-# ==========================================================
+# ============================================================
+# REGISTER MCP METHODS
+# ============================================================
 
 server.add_request_handler(
 
@@ -198,15 +206,13 @@ server.add_request_handler(
 
 
 
-# ==========================================================
+# ============================================================
 # FACTORY
-# ==========================================================
+# ============================================================
 
 def create_mcp_server() -> Server:
     """
-    Create MCP server instance.
-
-    Used by launcher.py
+    Return configured MCP server instance.
     """
 
     return server
