@@ -1,24 +1,28 @@
 """
 Faster Whisper CUDA connector.
 
-Responsibilities:
-- Manage singleton WhisperModel lifecycle
-- Lazy-load model only once
-- Prevent duplicate GPU allocation
-- Provide normalized transcription output
+Features:
+- Thread-safe singleton lifecycle
+- Lazy GPU model loading
+- CUDA float16 optimized
+- CPU int8 fallback
+- Word-level timestamps
+- Normalized transcription schema
+- Explicit GPU memory release
 """
 
 from __future__ import annotations
 
+import gc
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
 
 class WhisperCUDAConnector:
     """
-    Singleton-friendly Faster Whisper connector.
+    Thread-safe Faster Whisper connector.
 
-    Model is loaded lazily on first transcription request.
+    The Whisper model is loaded lazily only once.
     """
 
     def __init__(
@@ -27,57 +31,81 @@ class WhisperCUDAConnector:
         device: str = "cuda",
         compute_type: str = "float16",
     ) -> None:
+
         self.model_name: str = model_name
-        self.device: str = device
+        self.requested_device: str = device
         self.compute_type: str = compute_type
 
         self.model: Optional[Any] = None
+
+        self.active_device: Optional[str] = None
 
         self._lock: Lock = Lock()
 
 
     def load_model(self) -> None:
         """
-        Load Whisper model exactly once.
+        Load Whisper model lazily.
 
-        Priority:
+        Loading priority:
         1. CUDA float16
         2. CPU int8 fallback
         """
 
         if self.model is not None:
+            print("[WHISPER] Reusing existing model")
             return
+
 
         with self._lock:
 
-            # double-check after acquiring lock
             if self.model is not None:
+                print("[WHISPER] Reusing existing model")
                 return
 
+
+            from faster_whisper import WhisperModel
+
+
             try:
-                from faster_whisper import WhisperModel
 
                 print(
-                    f"[WHISPER] Loading {self.model_name} "
-                    f"on {self.device} ({self.compute_type})"
+                    f"[WHISPER] Loading "
+                    f"{self.model_name} "
+                    f"on {self.requested_device} "
+                    f"({self.compute_type})"
                 )
+
 
                 self.model = WhisperModel(
                     self.model_name,
-                    device=self.device,
+                    device=self.requested_device,
                     compute_type=self.compute_type,
                 )
 
-                print("[WHISPER] Model loaded successfully")
+
+                self.active_device = self.requested_device
+
+
+                print(
+                    "[WHISPER] Model loaded successfully"
+                )
+
 
             except Exception as error:
 
                 print(
-                    "[WHISPER] CUDA initialization failed."
-                    f" Falling back CPU. Reason: {error}"
+                    "[WHISPER] CUDA initialization failed"
                 )
 
-                from faster_whisper import WhisperModel
+                print(
+                    f"[WHISPER] Reason: {error}"
+                )
+
+                print(
+                    "[WHISPER] Loading CPU int8 fallback"
+                )
+
 
                 self.model = WhisperModel(
                     self.model_name,
@@ -85,7 +113,13 @@ class WhisperCUDAConnector:
                     compute_type="int8",
                 )
 
-                print("[WHISPER] CPU fallback model loaded")
+
+                self.active_device = "cpu"
+
+
+                print(
+                    "[WHISPER] CPU model loaded successfully"
+                )
 
 
     def transcribe(
@@ -93,67 +127,163 @@ class WhisperCUDAConnector:
         audio_file: str,
     ) -> Dict[str, Any]:
         """
-        Execute transcription.
+        Transcribe audio/video source.
 
         Args:
             audio_file:
-                Path to audio/video file.
+                Path to media file.
 
         Returns:
-            Dictionary containing:
-            - audio
-            - language
-            - segments
-            - device
+            Normalized transcription dictionary.
         """
 
+
         if self.model is None:
+
             self.load_model()
 
 
         if self.model is None:
+
             raise RuntimeError(
                 "Whisper model initialization failed"
             )
 
 
         segments, info = self.model.transcribe(
-            audio_file
+            audio_file,
+            beam_size=5,
+            word_timestamps=True,
+            vad_filter=True,
+            condition_on_previous_text=False,
         )
 
 
-        normalized_segments: List[Dict[str, Any]] = []
+        normalized_segments: List[
+            Dict[str, Any]
+        ] = []
 
 
         for segment in segments:
 
+            words: List[
+                Dict[str, Any]
+            ] = []
+
+
+            if segment.words:
+
+                for word in segment.words:
+
+                    words.append(
+                        {
+                            "word": (
+                                word.word.strip()
+                            ),
+                            "start": (
+                                float(word.start)
+                            ),
+                            "end": (
+                                float(word.end)
+                            ),
+                        }
+                    )
+
+
             normalized_segments.append(
                 {
-                    "start": float(segment.start),
-                    "end": float(segment.end),
-                    "text": segment.text.strip(),
+                    "start": (
+                        float(segment.start)
+                    ),
+                    "end": (
+                        float(segment.end)
+                    ),
+                    "text": (
+                        segment.text.strip()
+                    ),
+                    "words": words,
                 }
             )
 
 
         return {
+
             "audio": audio_file,
+
             "language": getattr(
                 info,
                 "language",
                 None,
             ),
+
             "segments": normalized_segments,
-            "device": self.device,
+
+            "device": self.active_device,
+
         }
 
 
 
-# ============================================================
-# GLOBAL SINGLETON INSTANCE
-# ============================================================
+    def release(self) -> None:
+        """
+        Release Whisper model and GPU cache.
 
-_connector_instance: Optional[WhisperCUDAConnector] = None
+        Used when application shutdown
+        or when GPU memory must be reclaimed.
+        """
+
+        with self._lock:
+
+            self.model = None
+
+            self.active_device = None
+
+            gc.collect()
+
+
+            try:
+
+                import torch
+
+
+                if torch.cuda.is_available():
+
+                    torch.cuda.empty_cache()
+
+                    torch.cuda.ipc_collect()
+
+
+            except ImportError:
+
+                print(
+                    "[WHISPER] Torch unavailable"
+                )
+
+
+            except Exception as error:
+
+                print(
+                    "[WHISPER] CUDA cleanup warning:"
+                )
+
+                print(error)
+
+
+        print(
+            "[WHISPER] Resources released"
+        )
+
+
+
+# =====================================================
+# GLOBAL SINGLETON INSTANCE
+# =====================================================
+
+
+_connector_instance: Optional[
+    WhisperCUDAConnector
+] = None
+
 
 _connector_lock: Lock = Lock()
 
@@ -165,19 +295,24 @@ def get_connector(
     compute_type: str = "float16",
 ) -> WhisperCUDAConnector:
     """
-    Return global Whisper connector instance.
+    Return global Whisper connector.
 
-    The same object is reused across the application.
+    Guarantees:
+    - one model instance
+    - one GPU allocation
+    - shared lifecycle
     """
 
     global _connector_instance
 
 
     if _connector_instance is not None:
+
         return _connector_instance
 
 
     with _connector_lock:
+
 
         if _connector_instance is None:
 
