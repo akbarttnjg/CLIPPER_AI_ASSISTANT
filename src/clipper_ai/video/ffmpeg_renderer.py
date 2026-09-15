@@ -1,68 +1,50 @@
 """
-FFmpeg NVENC subtitle burn renderer.
+FFmpeg NVENC Renderer.
 
-Responsibilities:
-- Burn ASS subtitle using libass
-- Encode with NVIDIA NVENC
-- Preserve audio
-- Validate output
-- Safe subprocess handling
+Features:
+- ASS subtitle burn-in using libass
+- NVIDIA NVENC H264 encoding
+- Windows path safe escaping
+- Robust subprocess handling
+- Output validation
 """
-
 
 from __future__ import annotations
 
 import subprocess
-import shlex
-
 from pathlib import Path
 from typing import List
 
 
-
 class FFmpegRenderError(Exception):
     """
-    FFmpeg execution failure.
+    FFmpeg rendering exception.
     """
-    pass
 
 
 
-def escape_filter_path(
-    path: str,
-) -> str:
+def escape_filter_path(path: Path) -> str:
     """
-    Escape Windows path for FFmpeg filter.
+    Convert Windows path into FFmpeg subtitles filter safe path.
 
     Example:
 
-    C:\video\a.ass
+    C:\\video\\subtitle.ass
 
     becomes:
 
-    C\\:/video/a.ass
+    C\\:/video/subtitle.ass
     """
 
-    value = str(
-        Path(path)
-        .absolute()
-    )
+    value: str = str(path.resolve())
 
+    # Windows slash -> FFmpeg slash
+    value = value.replace("\\", "/")
 
-    value = value.replace(
-        "\\",
-        "/"
-    )
-
-
-    value = value.replace(
-        ":",
-        "\\:"
-    )
-
+    # Escape drive colon
+    value = value.replace(":", "\\:")
 
     return value
-
 
 
 
@@ -70,18 +52,23 @@ def run_ffmpeg(
     command: List[str],
 ) -> None:
     """
-    Execute FFmpeg safely.
+    Execute FFmpeg process safely.
+
+    Args:
+        command:
+            Complete FFmpeg command.
 
     Raises:
         FFmpegRenderError
     """
-
 
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
 
@@ -91,11 +78,48 @@ def run_ffmpeg(
     if process.returncode != 0:
 
         raise FFmpegRenderError(
-            "\nFFmpeg failed\n\n"
-            + stderr[-4000:]
+            "\n".join(
+                [
+                    "FFmpeg execution failed",
+                    "",
+                    stderr[-8000:],
+                ]
+            )
         )
 
 
+
+def validate_output(
+    output_file: Path,
+) -> None:
+    """
+    Validate generated media file.
+
+    Checks:
+    - file exists
+    - file size > 0
+    """
+
+    if not output_file.exists():
+
+        raise FFmpegRenderError(
+            f"Output not created: {output_file}"
+        )
+
+
+    size = output_file.stat().st_size
+
+
+    if size <= 0:
+
+        raise FFmpegRenderError(
+            "Output file is empty"
+        )
+
+
+    print(
+        f"[FFMPEG] Output size: {size / 1024 / 1024:.2f} MB"
+    )
 
 
 
@@ -103,64 +127,48 @@ def render_with_ass_nvenc(
     input_video: str,
     subtitle_file: str,
     output_video: str,
-    preset: str = "p5",
-) -> str:
+    overwrite: bool = True,
+) -> Path:
     """
-    Burn ASS subtitle and encode using NVENC.
-
+    Burn ASS subtitle and encode with NVENC.
 
     Args:
 
         input_video:
-            source mp4
+            Source MP4.
 
         subtitle_file:
-            generated ASS subtitle
+            ASS subtitle file.
 
         output_video:
-            final mp4
-
-
-        preset:
-            NVENC preset
-
+            Destination MP4.
 
     Returns:
 
-        output path
+        Generated output path.
     """
 
 
+    source = Path(input_video)
 
-    source = Path(
-        input_video
-    )
+    subtitle = Path(subtitle_file)
 
-
-    subtitle = Path(
-        subtitle_file
-    )
-
-
-    output = Path(
-        output_video
-    )
+    output = Path(output_video)
 
 
 
     if not source.exists():
 
         raise FileNotFoundError(
-            f"Input video missing: {source}"
+            f"Missing input video: {source}"
         )
 
 
     if not subtitle.exists():
 
         raise FileNotFoundError(
-            f"ASS subtitle missing: {subtitle}"
+            f"Missing subtitle: {subtitle}"
         )
-
 
 
     output.parent.mkdir(
@@ -170,54 +178,66 @@ def render_with_ass_nvenc(
 
 
 
-    ass_path = escape_filter_path(
-        str(subtitle)
+    subtitle_path = escape_filter_path(
+        subtitle
     )
 
 
-    video_filter = (
-        f"subtitles='{ass_path}'"
+    vf_filter = (
+        f"subtitles='{subtitle_path}'"
     )
 
 
 
-    command = [
+    command: List[str] = [
 
         "ffmpeg",
 
-        "-y",
+        "-hide_banner",
+
+        "-loglevel",
+        "error",
+
+        "-stats",
+
+
+        "-y" if overwrite else "-n",
+
 
         "-i",
         str(source),
 
 
         "-vf",
-        video_filter,
+        vf_filter,
 
 
-        # NVIDIA encoder
+        # =========================
+        # NVIDIA NVENC
+        # =========================
 
         "-c:v",
         "h264_nvenc",
 
-
         "-preset",
-        preset,
+        "p4",
 
+        "-profile:v",
+        "high",
 
         "-rc",
         "vbr",
 
-
         "-cq",
-        "19",
+        "23",
+
+        "-pix_fmt",
+        "yuv420p",
 
 
-        "-b:v",
-        "0",
-
-
-        # audio
+        # =========================
+        # Audio
+        # =========================
 
         "-c:a",
         "aac",
@@ -225,6 +245,10 @@ def render_with_ass_nvenc(
         "-b:a",
         "192k",
 
+
+        # =========================
+        # Streaming optimization
+        # =========================
 
         "-movflags",
         "+faststart",
@@ -237,15 +261,11 @@ def render_with_ass_nvenc(
 
 
     print(
-        "[FFMPEG] Starting NVENC render"
+        "[FFMPEG] Command:"
     )
 
-
     print(
-        " ".join(
-            shlex.quote(x)
-            for x in command
-        )
+        " ".join(command)
     )
 
 
@@ -255,19 +275,9 @@ def render_with_ass_nvenc(
     )
 
 
-
-    if not output.exists():
-
-        raise RuntimeError(
-            "Output video not created"
-        )
-
-
-    if output.stat().st_size <= 0:
-
-        raise RuntimeError(
-            "Output video empty"
-        )
+    validate_output(
+        output
+    )
 
 
     print(
@@ -275,15 +285,43 @@ def render_with_ass_nvenc(
     )
 
 
-    return str(output)
+    return output
 
 
 
-
+# ==========================================================
+# CLI TEST
+# ==========================================================
 
 if __name__ == "__main__":
 
+    import sys
 
-    print(
-        "FFmpeg NVENC renderer module OK"
+
+    if len(sys.argv) != 4:
+
+        print(
+            """
+Usage:
+
+python ffmpeg_renderer.py input.mp4 subtitle.ass output.mp4
+
+Example:
+
+python ffmpeg_renderer.py video.mp4 subtitle.ass result.mp4
+"""
+        )
+
+        raise SystemExit(1)
+
+
+
+    render_with_ass_nvenc(
+
+        input_video=sys.argv[1],
+
+        subtitle_file=sys.argv[2],
+
+        output_video=sys.argv[3],
+
     )
